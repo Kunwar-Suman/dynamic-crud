@@ -35,12 +35,17 @@ const UserDetails = sequelize.define('user_details', {
   },
   password: {
     type: DataTypes.STRING, // Store hashed passwords
-    allowNull: false,
+    allowNull: true,
   },
   role: {
     type: DataTypes.ENUM('admin', 'user'),
     allowNull: false,
-  }
+  },
+  invitationToken:{
+    type: DataTypes.STRING
+
+  } 
+
 }, {
   timestamps: true,
   hooks: {

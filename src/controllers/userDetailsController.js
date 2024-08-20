@@ -1,4 +1,4 @@
-const UserDetails = require('../models/userDetails'); // Adjust the path according to your project structure
+const UserDetails = require('../models/userDetails'); 
 
 // Create a new user
 exports.createUser = async (req, res) => {

@@ -1,3 +1,5 @@
+require('dotenv').config();
+const nodemailer = require('nodemailer');
 const express = require('express');
 const bodyParser = require('body-parser');
 const jwt = require('jsonwebtoken');
@@ -5,16 +7,19 @@ const UserDetails = require('./src/models/userDetails');
 const InternshipDetails = require('./src/models/internshipDetails');
 const authRoutes = require('./src/routes/authRoutes');
 
+const inviteRoutes = require('./src/routes/inviteRoutes');
+const cors = require('cors');
+const path = require('path');
+
 const app = express();
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
-
-// Here FE is references SUMAN
-app.use(cors({
-    origin: 'http://localhost:3000', // URL of your React app
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
-}));
-
+app.use(cors(
+  {
+    origin: 'http://localhost:3001', // Allow requests from this origin
+    methods: 'GET,POST,PUT,DELETE', // Allow these methods
+  }
+));
 
 // Middleware for parsing JSON bodies
 app.use(bodyParser.json());
@@ -47,6 +52,12 @@ function authorizeRole(roles) {
 
 // Use authentication routes
 app.use('/api/auth', authRoutes);
+
+app.use(express.json());
+app.use('/api', inviteRoutes);
+
+// Serve static files from the React app
+app.use(express.static(path.join(__dirname, '../my-app/build')));
 
 // Dynamically generate CRUD endpoints for models
 const models = [UserDetails, InternshipDetails];
@@ -134,6 +145,11 @@ models.forEach(model => {
       res.status(500).json({ error: 'Server error' });
     }
   });
+});
+
+// Catch-all handler for React routes
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '../my-app/build', 'index.html'));
 });
 
 // Start server

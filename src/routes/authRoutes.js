@@ -11,7 +11,7 @@ router.post('/login', async (req, res) => {
     const { email, password } = req.body;
     try {
       const user = await UserDetails.findOne({
-        where: { email: { [Op.like]: email } } 
+        where: { email:  email  } 
       });
       if (!user) {
         return res.status(401).json({ message: 'Invalid credentials' });
@@ -19,7 +19,8 @@ router.post('/login', async (req, res) => {
   
       const isPasswordValid = await user.validatePassword(password);
       if (!isPasswordValid) {
-        return res.status(401).json({ message: 'Invalid credentials' });
+        console.error('Invalid password for user:', user.email);
+        return res.status(401).json({ message: 'Invalid password' });
       }
   
       const token = jwt.sign(
