@@ -1,4 +1,6 @@
 const UserDetails = require('../models/userDetails'); 
+const { Client } = require('@elastic/elasticsearch');
+const client = new Client({ node: process.env.ELASTICSEARCH_URL });
 
 // Create a new user
 exports.createUser = async (req, res) => {
@@ -128,5 +130,26 @@ exports.getAllUsers = async (req, res) => {
       message: 'Error fetching users',
       error: error.message
     });
+  }
+};
+
+// Search users
+exports.searchUsers = async (req, res) => {
+  try {
+    const query = req.query.q;
+    const { body } = await client.search({
+      index: 'users',
+      body: {
+        query: {
+          multi_match: {
+            query: query,
+            fields: ['firstName', 'lastName', 'email']
+          }
+        }
+      }
+    });
+    res.status(200).json(body.hits.hits);
+  } catch (error) {
+    res.status(500).json({ message: 'Error searching users', error: error.message });
   }
 };

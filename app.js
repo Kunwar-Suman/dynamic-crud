@@ -6,6 +6,44 @@ const jwt = require('jsonwebtoken');
 const UserDetails = require('./src/models/userDetails');
 const InternshipDetails = require('./src/models/internshipDetails');
 const authRoutes = require('./src/routes/authRoutes');
+const userRouter = require('./src/routes/userRouter');
+
+const redis = require('@redis/client');
+const util = require('util');
+const REDIS_URL = process.env.REDIS_URL;
+
+// Initialize Redis client
+const redisClient = redis.createClient({ url: REDIS_URL });
+redisClient.on('error', (err) => console.error('Redis error:', err));
+
+// Use promises for Redis commands
+const redisGet = redisClient.get.bind(redisClient);
+const redisSet = redisClient.set.bind(redisClient);
+const redisDel = redisClient.del.bind(redisClient);
+
+async function cacheData(key, fetchFunction) {
+  try {
+    // Check Redis cache
+    const cachedData = await redisGet(key);
+    if (cachedData) {
+      return JSON.parse(cachedData);
+    }
+
+    // Fetch from database if not in cache
+    const data = await fetchFunction();
+
+    // Store in Redis cache
+    await redisSet(key, JSON.stringify(data), { EX: 3600 }); // Cache for 1 hour
+
+    return data;
+  } catch (err) {
+    console.error('Error in cacheData:', err);
+    // Fallback to direct fetch if cache fails
+    return fetchFunction();
+  }
+}
+
+
 
 const inviteRoutes = require('./src/routes/inviteRoutes');
 const cors = require('cors');
@@ -55,6 +93,7 @@ app.use('/api/auth', authRoutes);
 
 app.use(express.json());
 app.use('/api', inviteRoutes);
+app.use('/api/user_details', userRouter);
 
 // Serve static files from the React app
 app.use(express.static(path.join(__dirname, '../my-app/build')));
@@ -70,7 +109,7 @@ models.forEach(model => {
   // CRUD endpoints
   app.get(`/api/${modelName}`, authenticateToken, authorizeRole(['admin']), async (req, res) => {
     try {
-      const data = await model.findAll();
+      const data = await cacheData(`${modelName}_all`, async () => model.findAll());
       res.json(data);
     } catch (err) {
       console.error(err);
@@ -81,7 +120,7 @@ models.forEach(model => {
   app.get(`/api/${modelName}/:id`, authenticateToken, async (req, res) => {
     const id = req.params.id;
     try {
-      const data = await model.findByPk(id);
+      const data = await cacheData(`${modelName}_${id}`, async () => model.findByPk(id));
       if (!data) {
         res.status(404).json({ error: 'Not found' });
       } else {
@@ -97,6 +136,7 @@ models.forEach(model => {
     const newData = req.body;
     try {
       const created = await model.create(newData);
+      await redisDel(`${modelName}_all`);
       res.status(201).json(created);
     } catch (err) {
       if (err.name === 'SequelizeValidationError') {
@@ -122,6 +162,8 @@ models.forEach(model => {
         res.status(404).json({ error: 'Not found' });
       } else {
         await data.update(updateData);
+        await redisDel(`${modelName}_${id}`);
+        await redisDel(`${modelName}_all`);
         res.json(data);
       }
     } catch (err) {
@@ -138,6 +180,8 @@ models.forEach(model => {
         res.status(404).json({ error: 'Not found' });
       } else {
         await data.destroy();
+        await redisDel(`${modelName}_${id}`);
+        await redisDel(`${modelName}_all`);
         res.json({ message: 'Deleted successfully' });
       }
     } catch (err) {
@@ -145,6 +189,36 @@ models.forEach(model => {
       res.status(500).json({ error: 'Server error' });
     }
   });
+});
+
+app.get('/api/user_details/search', authenticateToken, async (req, res) => {
+  const query = req.query.q;
+
+  if (!query) {
+    return res.status(400).json({ error: 'Query parameter "q" is required' });
+  }
+
+  try {
+    const cacheKey = `user_details_search_${query}`;
+    const results = await cacheData(cacheKey, async () => UserDetails.findAll({
+      where: {
+        [Op.or]: [
+          { firstName: { [Op.iLike]: `%${query}%` } },
+          { lastName: { [Op.iLike]: `%${query}%` } },
+          { email: { [Op.iLike]: `%${query}%` } }
+        ]
+      }
+    }));
+
+    if (results.length === 0) {
+      return res.status(404).json({ error: 'No users found' });
+    }
+
+    res.status(200).json(results);
+  } catch (err) {
+    console.error('Error during search:', err);
+    res.status(500).json({ error: 'Server error during search' });
+  }
 });
 
 // Catch-all handler for React routes

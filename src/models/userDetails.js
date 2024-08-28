@@ -1,5 +1,7 @@
 const { DataTypes, Sequelize } = require('sequelize');
 const bcrypt = require('bcrypt');
+const { Client } = require('@elastic/elasticsearch');
+const client = new Client({ node: process.env.ELASTICSEARCH_URL });
 
 const sequelize = new Sequelize('internship_mgmt', 'root', 'suman', {
   host: 'localhost',
@@ -58,10 +60,57 @@ const UserDetails = sequelize.define('user_details', {
       if (user.password) {
         user.password = await bcrypt.hash(user.password, 10);
       }
+    },
+    afterCreate: async (user) => {
+      try {
+        await client.index({
+          index: 'users',
+          id: user.id.toString(),
+          body: {
+            firstName: user.firstName,
+            lastName: user.lastName,
+            email: user.email,
+            phone: user.phone,
+            address: user.address,
+            role: user.role
+          }
+        });
+      } catch (error) {
+        console.error('Error indexing document to Elasticsearch after create:', error);
+      }
+    },
+    afterUpdate: async (user) => {
+      try {
+        await client.update({
+          index: 'users',
+          id: user.id.toString(),
+          body: {
+            doc: {
+              firstName: user.firstName,
+              lastName: user.lastName,
+              email: user.email,
+              phone: user.phone,
+              address: user.address,
+              role: user.role
+            }
+          }
+        });
+      } catch (error) {
+        console.error('Error updating document in Elasticsearch after update:', error);
+      }
+    },
+    beforeDestroy: async (user) => {
+      try {
+        await client.delete({
+          index: 'users',
+          id: user.id.toString()
+        });
+      } catch (error) {
+        console.error('Error deleting document from Elasticsearch before destroy:', error);
+      }
     }
   }
 });
-
 // Method to validate the password
 UserDetails.prototype.validatePassword = async function(password) {
   return await bcrypt.compare(password, this.password);
